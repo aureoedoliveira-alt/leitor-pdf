@@ -1,0 +1,27 @@
+name: LeitorPDF
+options:
+  bundleIdPrefix: com.seunome
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  LeitorPDF:
+    type: application
+    platform: iOS
+    sources: [LeitorPDF]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.seunome.leitorpdf
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Leitor PDF
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    info:
+      path: LeitorPDF/Info.plist
+      properties:
+        UIBackgroundModes: [audio]
+        UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true

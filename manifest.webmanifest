@@ -1,0 +1,13 @@
+{
+  "name": "Leitor PDF em Voz",
+  "short_name": "Leitor PDF",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f3f5f8",
+  "theme_color": "#2148c9",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

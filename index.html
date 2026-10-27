@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Leitor PDF">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Leitor PDF em Voz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.azform { display: grid; gap: 8px; }
+.azform label { font-size: 13px; font-weight: 700; }
+.azform input { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); width: 100%; }
+.azform input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+/* Layout: app de uma tela. Topo fino, texto do PDF no meio em coluna de leitura, controles fixos embaixo (alcance do polegar). */
+:root {
+  --bg: #f3f5f8;
+  --paper: #ffffff;
+  --ink: #1b2330;
+  --muted: #5d6878;
+  --line: #dde2ea;
+  --accent: #2148c9;
+  --accent-ink: #ffffff;
+  --marker: #ffe36b;
+  --marker-ink: #1b2330;
+  --font-read: "Literata", Georgia, "Times New Roman", serif;
+  --font-ui: "Atkinson Hyperlegible", -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --paper: #181e27; --ink: #e6eaf1; --muted: #98a3b4; --line: #2a3340;
+    --accent: #7d9bff; --accent-ink: #0d1220; --marker: #5c4d0f; --marker-ink: #fff6cf;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --paper: #181e27; --ink: #e6eaf1; --muted: #98a3b4; --line: #2a3340;
+  --accent: #7d9bff; --accent-ink: #0d1220; --marker: #5c4d0f; --marker-ink: #fff6cf;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; }
+body { padding-top: env(safe-area-inset-top, 0px); }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 16px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { padding-block: 10px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); background: var(--paper); }
+header h1 { font-size: 15px; font-weight: 700; margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header .sub { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+button, select { font: inherit; color: inherit; }
+.btn { border: 1px solid var(--line); background: var(--paper); border-radius: 10px; padding: 8px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.btn:focus-visible, select:focus-visible, .s:focus-visible, .icon:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+
+main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.text { max-width: 38rem; margin: 0 auto; padding-block: 20px 40px; font-family: var(--font-read); font-size: 19px; line-height: 1.7; }
+.page { display: grid; gap: 6px; margin-block-end: 28px; }
+.page-label { font-family: var(--font-ui); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.page p { margin: 0; }
+.s { cursor: pointer; border-radius: 3px; transition: background-color .2s; }
+.s:hover { background: color-mix(in srgb, var(--marker) 35%, transparent); }
+.s.now { background: var(--marker); color: var(--marker-ink); box-shadow: 0 0 0 3px var(--marker); }
+.note { font-family: var(--font-ui); font-size: 14px; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; line-height: 1.45; margin-block-end: 20px; }
+
+footer { background: var(--paper); border-top: 1px solid var(--line); padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.transport { display: flex; align-items: center; justify-content: center; gap: 28px; }
+.icon { width: 44px; height: 44px; border-radius: 50%; border: none; background: transparent; cursor: pointer; display: grid; place-items: center; color: var(--ink); }
+.icon svg { width: 24px; height: 24px; fill: currentColor; }
+.play { width: 64px; height: 64px; background: var(--accent); color: var(--accent-ink); }
+.play svg { width: 30px; height: 30px; }
+.icon:disabled { opacity: .35; cursor: default; }
+.settings { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.settings label { display: flex; align-items: center; gap: 8px; flex: 1 1 200px; min-width: 0; }
+.settings input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.settings select { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.rate { font-variant-numeric: tabular-nums; width: 3.2em; text-align: right; font-weight: 700; }
+
+.sheet[hidden] { display: none; }
+.sheet { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--ink) 40%, transparent); display: flex; align-items: flex-end; justify-content: center; }
+.sheet-body { background: var(--paper); width: 100%; max-width: 34rem; max-height: 80%; overflow-y: auto; border-radius: 18px 18px 0 0; padding-block: 18px calc(18px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 14px; }
+.sheet h2 { margin: 0; font-size: 18px; }
+.sheet ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.sheet li { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-block: 10px; }
+.sheet li button.open { flex: 1; min-width: 0; text-align: left; background: none; border: none; cursor: pointer; padding: 4px 0; }
+.sheet li .name { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet li .info { font-size: 12px; color: var(--muted); }
+.tip { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 0; }
+#fileInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .s, .bar > i { transition: none; } }
+</style>
+
+</head>
+<body>
+<header class="wrap">
+  <h1 id="docTitle">Carregando…<span class="sub" id="docSub"></span></h1>
+  <button class="btn" id="vozesBtn" type="button" aria-haspopup="dialog">Vozes</button>
+  <button class="btn" id="libBtn" type="button" aria-haspopup="dialog">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v16h-4zM16.3 4.6l3.8-1.3 5.2 15.2-3.8 1.3z" transform="scale(.92)"/></svg>
+    Biblioteca
+  </button>
+</header>
+
+<main id="main">
+  <div class="text wrap" id="text"></div>
+</main>
+
+<footer class="wrap">
+  <div class="bar" aria-hidden="true"><i id="progress"></i></div>
+  <div class="meta"><span id="pageInfo">—</span><span id="pctInfo">0%</span></div>
+  <div class="transport">
+    <button class="icon" id="prevBtn" type="button" aria-label="Frase anterior"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12 18 6v12z"/></svg></button>
+    <button class="icon play" id="playBtn" type="button" aria-label="Ouvir"><svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5v14l11-7z"/></svg></button>
+    <button class="icon" id="nextBtn" type="button" aria-label="Próxima frase"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg></button>
+  </div>
+  <div class="settings">
+    <label for="rate">Velocidade
+      <input type="range" id="rate" min="0.6" max="2" step="0.1" value="1">
+      <span class="rate" id="rateOut">1,0x</span>
+    </label>
+    <label for="voice">Voz <select id="voice"></select></label>
+  </div>
+</footer>
+
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet-body wrap">
+    <div style="display:flex;align-items:center;gap:12px">
+      <h2 id="sheetTitle" style="flex:1">Biblioteca</h2>
+      <button class="btn" id="closeSheet" type="button">Fechar</button>
+    </div>
+    <label class="btn primary" for="fileInput" style="justify-content:center">+ Importar PDF</label>
+    <input type="file" id="fileInput" accept="application/pdf,.pdf">
+    <ul id="libList"></ul>
+    <p class="tip">Os PDFs ficam guardados só neste aparelho, neste navegador. Para vozes mais naturais no iPhone, baixe uma voz <b>Premium</b> ou <b>Melhorada</b> em Ajustes › Acessibilidade › Leitura e Fala › Vozes › Português (Brasil), depois feche e abra esta página de novo.</p>
+  </div>
+</div>
+
+
+<div class="sheet" id="vozesSheet" hidden role="dialog" aria-modal="true" aria-labelledby="vozesTitle">
+  <div class="sheet-body wrap">
+    <div style="display:flex;align-items:center;gap:12px">
+      <h2 id="vozesTitle" style="flex:1">Vozes da Microsoft</h2>
+      <button class="btn" id="closeVozes" type="button">Fechar</button>
+    </div>
+    <p class="tip">Vozes neurais bem mais naturais, pela internet. O plano grátis (F0) da Microsoft dá 500 mil caracteres por mês, mais ou menos um livro de 250 páginas, e não cobra nada: quando a cota acaba, só para até o mês seguinte. Com essas vozes a leitura continua com a tela bloqueada.</p>
+    <form id="azForm" class="azform">
+      <label for="azChave">Chave (KEY 1)</label>
+      <input id="azChave" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="cole aqui a chave do recurso de Fala">
+      <label for="azRegiao">Região (Location/Region)</label>
+      <input id="azRegiao" type="text" autocapitalize="off" spellcheck="false" placeholder="brazilsouth">
+      <button class="btn primary" type="submit" style="justify-content:center">Salvar e testar</button>
+    </form>
+    <p class="tip" id="azStatus" role="status"></p>
+    <p class="tip" id="azUso"></p>
+    <p class="tip">A chave fica guardada só neste aparelho, neste navegador. Ela nunca vai para o GitHub. Para voltar às vozes do iPhone, apague a chave e toque em Salvar.</p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const synth = window.speechSynthesis;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
+// Trecho de exemplo em domínio público (Machado de Assis, Dom Casmurro, cap. I), para testar as vozes antes de importar um PDF.
+const EXEMPLO = {
+  id: "exemplo", name: "Exemplo — Dom Casmurro (cap. I)", pages: [
+    "Uma noite destas, vindo da cidade para o Engenho Novo, encontrei no trem da Central um rapaz aqui do bairro, que eu conheço de vista e de chapéu. Cumprimentou-me, sentou-se ao pé de mim, falou da lua e dos ministros, e acabou recitando-me versos. A viagem era curta, e os versos pode ser que não fossem inteiramente maus. Sucedeu, porém, que, como eu estava cansado, fechei os olhos três ou quatro vezes; tanto bastou para que ele interrompesse a leitura e metesse os versos no bolso.",
+    "Este é um texto de exemplo. Toque em Biblioteca e depois em Importar PDF para escolher um arquivo do seu iPhone. Você pode tocar em qualquer frase para começar a leitura a partir dela."
+  ]
+};
+
+let doc = null;          // { id, name, pages: [string] }
+let items = [];          // [{ page, text, el }]
+let idx = 0;
+let playing = false;
+let token = 0;
+let voices = [];
+let wakeLock = null;
+
+// ---------- Biblioteca (IndexedDB) ----------
+function idb() {
+  return new Promise((ok, fail) => {
+    try {
+      const r = indexedDB.open("leitor-pdf", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("pdfs", { keyPath: "id" });
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => fail(r.error);
+    } catch (e) { fail(e); }
+  });
+}
+async function dbDo(mode, fn) {
+  const db = await idb();
+  return new Promise((ok, fail) => {
+    const tx = db.transaction("pdfs", mode);
+    const req = fn(tx.objectStore("pdfs"));
+    tx.oncomplete = () => ok(req && req.result);
+    tx.onerror = () => fail(tx.error);
+  });
+}
+const dbAll = () => dbDo("readonly", (s) => s.getAll()).catch(() => []);
+const dbPut = (rec) => dbDo("readwrite", (s) => s.put(rec)).catch(() => {});
+const dbDel = (id) => dbDo("readwrite", (s) => s.delete(id)).catch(() => {});
+
+// ---------- PDF → texto ----------
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+async function extrairPaginas(buffer, onProgress) {
+  if (!window.pdfjsLib) throw new Error("o leitor de PDF não carregou; verifique a internet e recarregue a página");
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer.slice(0)) }).promise;
+  const pages = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    onProgress && onProgress(n, pdf.numPages);
+    const content = await (await pdf.getPage(n)).getTextContent();
+    let s = "";
+    for (const it of content.items) { s += it.str; if (it.hasEOL) s += "\n"; }
+    s = s.replace(/-\n(?=\p{Ll})/gu, "").replace(/\s*\n\s*/g, " ").replace(/\s+/g, " ").trim();
+    pages.push(s);
+  }
+  return pages;
+}
+
+function frases(texto) {
+  if (window.Intl && Intl.Segmenter) {
+    return [...new Intl.Segmenter("pt", { granularity: "sentence" }).segment(texto)].map((x) => x.segment);
+  }
+  return texto.match(/[^.!?…]+[.!?…]+["”»)]*\s*|[^.!?…]+$/g) || [];
+}
+
+// ---------- Mostrar o documento ----------
+function mostrar(d) {
+  pausar();
+  doc = d;
+  items = [];
+  const box = $("text");
+  box.textContent = "";
+  $("docTitle").firstChild.textContent = d.name.replace(/\.pdf$/i, "");
+  $("docSub").textContent = `${d.pages.length} página${d.pages.length === 1 ? "" : "s"}`;
+
+  if (!d.pages.some((p) => /[\p{L}\p{N}]/u.test(p))) {
+    const n = document.createElement("p");
+    n.className = "note";
+    n.textContent = "Não encontrei texto neste PDF. Ele parece ser uma digitalização (foto das páginas). Para esse tipo de arquivo será preciso reconhecimento de texto (OCR), que fica para uma próxima versão.";
+    box.append(n);
+  }
+
+  d.pages.forEach((texto, pi) => {
+    if (!texto) return;
+    const sec = document.createElement("section");
+    sec.className = "page";
+    const lab = document.createElement("div");
+    lab.className = "page-label";
+    lab.textContent = `Página ${pi + 1}`;
+    const p = document.createElement("p");
+    for (const f of frases(texto)) {
+      const fala = f.trim();
+      const span = document.createElement("span");
+      span.textContent = f;
+      if (/[\p{L}\p{N}]/u.test(fala)) {
+        const i = items.length;
+        span.className = "s";
+        span.tabIndex = 0;
+        span.addEventListener("click", () => irPara(i, true));
+        span.addEventListener("keydown", (e) => { if (e.key === "Enter") irPara(i, true); });
+        items.push({ page: pi, text: fala, el: span });
+      }
+      p.append(span);
+    }
+    sec.append(lab, p);
+    box.append(sec);
+  });
+
+  store.set("ultimo", d.id);
+  irPara(Math.min(store.get("pos:" + d.id, 0), Math.max(items.length - 1, 0)), false, true);
+  atualizarBotoes();
+}
+
+function irPara(i, falarSeTocando, rolarSemAnimacao) {
+  if (!items.length) return;
+  if (items[idx]) items[idx].el.classList.remove("now");
+  idx = Math.max(0, Math.min(i, items.length - 1));
+  const it = items[idx];
+  it.el.classList.add("now");
+  store.set("pos:" + doc.id, idx);
+  const reduz = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  it.el.scrollIntoView({ block: "center", behavior: rolarSemAnimacao || reduz ? "auto" : "smooth" });
+  $("pageInfo").textContent = `Página ${it.page + 1} de ${doc.pages.length}`;
+  const pct = items.length > 1 ? Math.round((idx / (items.length - 1)) * 100) : 0;
+  $("pctInfo").textContent = `${pct}%`;
+  $("progress").style.width = pct + "%";
+  if (falarSeTocando && playing) falar();
+}
+
+// ---------- Voz ----------
+// Dois motores: as vozes do próprio aparelho (grátis, sem internet) e as vozes neurais da Microsoft (Azure, pela internet).
+// No seletor, o valor começa com "web:" ou "az:" para saber qual motor usar.
+const audio = new Audio();
+audio.preload = "auto";
+let falaAtual = null;
+let comecou = false;
+const cacheAz = new Map(); // índice da frase -> Promise<URL do áudio>
+
+function qualidade(v) {
+  // No iPhone o nome costuma ser só "Luciana"; a qualidade aparece no identificador (com.apple.voice.premium.pt-BR.Luciana).
+  const n = (v.name + " " + v.voiceURI).toLowerCase();
+  if (n.includes("premium")) return 3;
+  if (n.includes("enhanced") || n.includes("melhorad") || n.includes("aprimorad") || n.includes("neural") || n.includes("natural")) return 2;
+  return v.localService ? 1 : 0;
+}
+
+const azure = {
+  get chave() { return store.get("az.chave", ""); },
+  get regiao() { return store.get("az.regiao", "brazilsouth"); },
+  get vozes() { return store.get("az.vozes", []); },
+  base() { return `https://${this.regiao}.tts.speech.microsoft.com/cognitiveservices`; },
+  async listarVozes() {
+    const r = await fetch(this.base() + "/voices/list", { headers: { "Ocp-Apim-Subscription-Key": this.chave } });
+    if (r.status === 401) throw new Error("a chave não foi aceita. Confira se copiou a chave inteira e se a região está certa");
+    if (!r.ok) throw new Error(`a Microsoft respondeu com o erro ${r.status}`);
+    const todas = await r.json();
+    return todas
+      .filter((v) => v.Locale.startsWith("pt-"))
+      .sort((a, b) => (b.Locale === "pt-BR") - (a.Locale === "pt-BR") || a.DisplayName.localeCompare(b.DisplayName))
+      .map((v) => ({ id: v.ShortName, nome: v.DisplayName, idioma: v.Locale, genero: v.Gender === "Female" ? "feminina" : "masculina" }));
+  },
+  async sintetizar(texto, voz) {
+    const esc = texto.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]);
+    const lang = voz.slice(0, 5);
+    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${lang}"><voice name="${voz}">${esc}</voice></speak>`;
+    const r = await fetch(this.base() + "/v1", {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": this.chave,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+      },
+      body: ssml,
+    });
+    if (r.status === 429) throw new Error("a cota grátis do mês acabou ou houve pedidos demais seguidos. Use uma voz do iPhone por enquanto");
+    if (r.status === 401) throw new Error("a chave da Microsoft não foi aceita. Confira em Vozes");
+    if (!r.ok) throw new Error(`a Microsoft respondeu com o erro ${r.status}`);
+    contarCaracteres(texto.length);
+    return URL.createObjectURL(await r.blob());
+  },
+};
+
+function contarCaracteres(n) {
+  const mes = new Date().toISOString().slice(0, 7);
+  const uso = store.get("az.uso", { mes, total: 0 });
+  if (uso.mes !== mes) { uso.mes = mes; uso.total = 0; }
+  uso.total += n;
+  store.set("az.uso", uso);
+  mostrarUso();
+}
+function mostrarUso() {
+  const mes = new Date().toISOString().slice(0, 7);
+  const uso = store.get("az.uso", { mes, total: 0 });
+  const total = uso.mes === mes ? uso.total : 0;
+  const el = $("azUso");
+  if (el) el.textContent = `Usado neste mês (contado por este aparelho): ${total.toLocaleString("pt-BR")} de 500.000 caracteres grátis.`;
+}
+
+let vozesWeb = [];
+function carregarVozes() {
+  const todas = synth ? synth.getVoices() : [];
+  let pt = todas.filter((v) => v.lang.toLowerCase().startsWith("pt"));
+  if (!pt.length) pt = todas;
+  vozesWeb = pt.sort((a, b) => qualidade(b) - qualidade(a) || (b.lang === "pt-BR") - (a.lang === "pt-BR") || a.name.localeCompare(b.name));
+
+  const sel = $("voice");
+  const salvo = store.get("voz", null);
+  sel.textContent = "";
+  const az = azure.chave ? azure.vozes : [];
+  if (az.length) {
+    const g = document.createElement("optgroup");
+    g.label = "Microsoft (internet, mais natural)";
+    for (const v of az) g.append(new Option(`${v.nome} · ${v.genero} (${v.idioma})`, "az:" + v.id));
+    sel.append(g);
+  }
+  const g2 = document.createElement("optgroup");
+  g2.label = "Deste aparelho (grátis, sem internet)";
+  if (!vozesWeb.length) g2.append(new Option("Voz padrão do aparelho", "web:"));
+  for (const v of vozesWeb) {
+    const rot = ["", " · básica", " · melhorada", " · premium"][qualidade(v)];
+    g2.append(new Option(`${v.name.replace(/\s*\(.*?\)\s*/g, " ").trim()} (${v.lang})${rot}`, "web:" + v.voiceURI));
+  }
+  sel.append(g2);
+  const valores = [...sel.options].map((o) => o.value);
+  sel.value = valores.includes(salvo) ? salvo : valores[0];
+}
+const motor = () => ($("voice").value.startsWith("az:") ? "az" : "web");
+const vozWeb = () => vozesWeb.find((v) => "web:" + v.voiceURI === $("voice").value) || null;
+const velocidade = () => parseFloat($("rate").value);
+
+function limparCache() {
+  for (const p of cacheAz.values()) p.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+  cacheAz.clear();
+}
+function audioDaFrase(i) {
+  const voz = $("voice").value.slice(3);
+  if (!cacheAz.has(i)) {
+    const p = azure.sintetizar(items[i].text, voz);
+    p.catch(() => cacheAz.delete(i));
+    cacheAz.set(i, p);
+  }
+  // Mantém só a frase atual e as próximas no cache.
+  for (const [k, p] of cacheAz) {
+    if (k < idx - 1 || k > idx + 4) { cacheAz.delete(k); p.then((u) => URL.revokeObjectURL(u)).catch(() => {}); }
+  }
+  return cacheAz.get(i);
+}
+
+function falar() {
+  if (!items[idx]) return;
+  const meu = ++token;
+  if (motor() === "az") return falarAzure(meu);
+  if (!synth) { alertaSemVoz(); pausar(); return; }
+  audio.pause();
+  const ocupado = synth.speaking || synth.pending;
+  if (ocupado) synth.cancel();
+  const u = new SpeechSynthesisUtterance(items[idx].text);
+  const v = vozWeb();
+  if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = "pt-BR"; }
+  u.rate = velocidade();
+  u.onstart = () => { comecou = true; esconderAviso(); };
+  u.onend = () => { if (meu === token && playing) proxima(); };
+  u.onerror = (e) => {
+    if (meu !== token || e.error === "interrupted" || e.error === "canceled") return;
+    pausar();
+    mostrarAviso(`O aparelho recusou a leitura (erro: ${e.error}). Tente escolher outra voz.`);
+  };
+  falaAtual = u; // o Safari pode descartar a fala no meio se ninguém guardar a referência
+  synth.resume();
+  // No iPhone, falar logo depois de cancelar às vezes é ignorado; uma pausa curta resolve.
+  if (ocupado) setTimeout(() => { if (meu === token) synth.speak(u); }, 80);
+  else synth.speak(u);
+  if (!comecou) {
+    setTimeout(() => {
+      if (meu === token && playing && !comecou) {
+        mostrarAviso("Não está saindo som? No iPhone, a leitura fica muda quando o aparelho está no modo silencioso. Desligue o silencioso (chave na lateral ou Central de Controle), aumente o volume e toque em ▶︎ de novo.");
+      }
+    }, 3000);
+  }
+}
+
+async function falarAzure(meu) {
+  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  const i = idx;
+  try {
+    const url = await audioDaFrase(i);
+    if (meu !== token || !playing) return;
+    audio.src = url;
+    audio.playbackRate = velocidade();
+    audio.onended = () => { if (meu === token && playing) proxima(); };
+    await audio.play();
+    esconderAviso();
+    if (i + 1 < items.length) audioDaFrase(i + 1);
+    if (i + 2 < items.length) audioDaFrase(i + 2);
+  } catch (e) {
+    if (meu !== token) return;
+    pausar();
+    mostrarAviso("Não consegui usar a voz da Microsoft: " + (e && e.message ? e.message : e) + ".");
+  }
+}
+
+function proxima() {
+  if (idx < items.length - 1) { irPara(idx + 1); falar(); }
+  else pausar();
+}
+
+function wavSilencioso() {
+  // 0,1 s de silêncio em WAV, montado aqui mesmo.
+  const n = 800, b = new DataView(new ArrayBuffer(44 + n));
+  const s = (o, t) => [...t].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+  s(0, "RIFF"); b.setUint32(4, 36 + n, true); s(8, "WAVEfmt "); b.setUint32(16, 16, true);
+  b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, 8000, true); b.setUint32(28, 8000, true);
+  b.setUint16(32, 1, true); b.setUint16(34, 8, true); s(36, "data"); b.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) b.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([b], { type: "audio/wav" }));
+}
+
+// O iPhone só libera o áudio se o primeiro play acontecer dentro do toque no botão.
+function destravarAudio() {
+  if (audio.dataset.ok) return;
+  audio.src = wavSilencioso();
+  audio.play().then(() => { audio.dataset.ok = "1"; }).catch(() => {});
+}
+
+function tocar() {
+  if (!items.length) return;
+  playing = true;
+  atualizarBotoes();
+  if (motor() === "az") destravarAudio();
+  falar();
+  navigator.wakeLock?.request("screen").then((w) => { wakeLock = w; }).catch(() => {});
+}
+function pausar() {
+  playing = false;
+  token++;
+  if (synth) synth.cancel();
+  audio.pause();
+  try { wakeLock && wakeLock.release(); } catch {}
+  wakeLock = null;
+  atualizarBotoes();
+}
+function mostrarAviso(msg) {
+  let n = $("aviso");
+  if (!n) {
+    n = document.createElement("p");
+    n.id = "aviso";
+    n.className = "note";
+    n.setAttribute("role", "status");
+    $("text").prepend(n);
+  }
+  n.textContent = msg;
+  $("main").scrollTop = 0;
+}
+function esconderAviso() { const n = $("aviso"); if (n) n.remove(); }
+function alertaSemVoz() {
+  mostrarAviso("Este navegador não oferece leitura em voz alta. Abra a página no Safari ou no Chrome, ou configure as vozes da Microsoft.");
+}
+function atualizarBotoes() {
+  $("playIcon").innerHTML = playing ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+  $("playBtn").setAttribute("aria-label", playing ? "Pausar" : "Ouvir");
+  const vazio = !items.length;
+  ["playBtn", "prevBtn", "nextBtn"].forEach((id) => ($(id).disabled = vazio));
+  if ("mediaSession" in navigator && doc) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: doc.name.replace(/\.pdf$/i, ""), artist: "Leitor PDF em Voz" });
+      navigator.mediaSession.playbackState = playing ? "playing" : "paused";
+    } catch {}
+  }
+}
+
+// ---------- Configurar vozes da Microsoft ----------
+function abrirVozes() {
+  $("azChave").value = azure.chave;
+  $("azRegiao").value = azure.regiao;
+  $("azStatus").textContent = azure.vozes.length ? `${azure.vozes.length} vozes da Microsoft ativas.` : "";
+  mostrarUso();
+  $("vozesSheet").hidden = false;
+}
+async function salvarAzure(e) {
+  e.preventDefault();
+  const chave = $("azChave").value.trim();
+  const regiao = $("azRegiao").value.trim().toLowerCase().replace(/\s+/g, "");
+  store.set("az.chave", chave);
+  store.set("az.regiao", regiao || "brazilsouth");
+  if (!chave) {
+    store.set("az.vozes", []);
+    $("azStatus").textContent = "Chave removida. Voltando às vozes do aparelho.";
+    carregarVozes();
+    return;
+  }
+  $("azStatus").textContent = "Testando a chave…";
+  try {
+    const vozes = await azure.listarVozes();
+    store.set("az.vozes", vozes);
+    limparCache();
+    const preferida = vozes.find((v) => v.id === "pt-BR-FranciscaNeural") || vozes[0];
+    if (preferida) store.set("voz", "az:" + preferida.id);
+    carregarVozes();
+    $("azStatus").textContent = `Pronto! ${vozes.length} vozes em português liberadas. Escolha no campo Voz, lá embaixo.`;
+  } catch (err) {
+    $("azStatus").textContent = "Não funcionou: " + err.message + ".";
+  }
+}
+
+// ---------- Biblioteca (tela) ----------
+async function abrirBiblioteca() {
+  const lista = $("libList");
+  lista.textContent = "";
+  const recs = (await dbAll()).sort((a, b) => b.added - a.added);
+  const todos = [{ id: EXEMPLO.id, name: EXEMPLO.name, pages: EXEMPLO.pages, exemplo: true }, ...recs];
+  for (const r of todos) {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.className = "open";
+    b.type = "button";
+    const total = r.pages.length;
+    const pos = store.get("pos:" + r.id, 0);
+    b.innerHTML = `<span class="name"></span><span class="info"></span>`;
+    b.querySelector(".name").textContent = r.name.replace(/\.pdf$/i, "");
+    b.querySelector(".info").textContent = r.exemplo ? "Texto de exemplo" : `${total} página${total === 1 ? "" : "s"}${pos ? " · leitura em andamento" : ""}`;
+    b.addEventListener("click", () => { fecharBiblioteca(); mostrar(r); });
+    li.append(b);
+    if (!r.exemplo) {
+      const del = document.createElement("button");
+      del.className = "btn";
+      del.type = "button";
+      del.textContent = "Remover";
+      del.addEventListener("click", async () => {
+        if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "Confirmar"; return; }
+        await dbDel(r.id);
+        store.del("pos:" + r.id);
+        if (doc && doc.id === r.id) mostrar(EXEMPLO);
+        abrirBiblioteca();
+      });
+      li.append(del);
+    }
+    lista.append(li);
+  }
+  $("sheet").hidden = false;
+}
+function fecharBiblioteca() { $("sheet").hidden = true; }
+
+async function importar(file) {
+  fecharBiblioteca();
+  pausar();
+  $("text").innerHTML = '<p class="note" id="loading">Abrindo o PDF…</p>';
+  try {
+    const buf = await file.arrayBuffer();
+    const pages = await extrairPaginas(buf, (n, t) => { const el = $("loading"); if (el) el.textContent = `Lendo a página ${n} de ${t}…`; });
+    const rec = { id: `${file.name}|${file.size}`, name: file.name, pages, added: Date.now() };
+    await dbPut(rec);
+    mostrar(rec);
+  } catch (e) {
+    $("text").innerHTML = "";
+    const n = document.createElement("p");
+    n.className = "note";
+    n.textContent = "Não consegui abrir este arquivo. Confira se é um PDF válido e sem senha. Detalhe: " + (e && e.message ? e.message : e);
+    $("text").append(n);
+  }
+}
+
+// ---------- Eventos ----------
+$("playBtn").addEventListener("click", () => (playing ? pausar() : tocar()));
+$("prevBtn").addEventListener("click", () => irPara(idx - 1, true));
+$("nextBtn").addEventListener("click", () => irPara(idx + 1, true));
+$("rate").addEventListener("input", (e) => {
+  $("rateOut").textContent = parseFloat(e.target.value).toFixed(1).replace(".", ",") + "x";
+  store.set("vel", e.target.value);
+  audio.playbackRate = velocidade();
+});
+$("rate").addEventListener("change", () => { if (playing && motor() === "web") falar(); });
+$("voice").addEventListener("change", (e) => { store.set("voz", e.target.value); limparCache(); if (playing) { if (motor() === "az") destravarAudio(); falar(); } });
+$("libBtn").addEventListener("click", abrirBiblioteca);
+$("closeSheet").addEventListener("click", fecharBiblioteca);
+$("sheet").addEventListener("click", (e) => { if (e.target.id === "sheet") fecharBiblioteca(); });
+$("vozesBtn").addEventListener("click", abrirVozes);
+$("closeVozes").addEventListener("click", () => ($("vozesSheet").hidden = true));
+$("vozesSheet").addEventListener("click", (e) => { if (e.target.id === "vozesSheet") $("vozesSheet").hidden = true; });
+$("azForm").addEventListener("submit", salvarAzure);
+$("fileInput").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) importar(f); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { fecharBiblioteca(); $("vozesSheet").hidden = true; } });
+// As vozes do aparelho param quando a tela bloqueia; as da Microsoft continuam tocando.
+document.addEventListener("visibilitychange", () => { if (document.hidden && playing && motor() === "web") pausar(); });
+if ("mediaSession" in navigator) {
+  try {
+    navigator.mediaSession.setActionHandler("play", tocar);
+    navigator.mediaSession.setActionHandler("pause", pausar);
+    navigator.mediaSession.setActionHandler("nexttrack", () => irPara(idx + 1, true));
+    navigator.mediaSession.setActionHandler("previoustrack", () => irPara(idx - 1, true));
+  } catch {}
+}
+
+// ---------- Início ----------
+(async function iniciar() {
+  const vel = store.get("vel", "1");
+  $("rate").value = vel;
+  $("rateOut").textContent = parseFloat(vel).toFixed(1).replace(".", ",") + "x";
+  carregarVozes();
+  if (synth) synth.addEventListener?.("voiceschanged", carregarVozes);
+  const ultimo = store.get("ultimo", null);
+  const recs = ultimo && ultimo !== "exemplo" ? await dbAll() : [];
+  mostrar(recs.find((r) => r.id === ultimo) || EXEMPLO);
+})();
+</script>
+</body>
+</html>
